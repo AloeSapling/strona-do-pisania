@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Example</title>
+</head>
+<body>
+    <h1>Chat</h1>
+    {% csrf_token %}
+    <textarea id="chat-log" cols="100" rows="20"></textarea><br>
+    <input id="chat-message-input" type="text" size="100"><br>
+    <input id="chat-message-submit" type="button" value="Send">
+    <br>
+    <h1>Friends and friend requests</h1>
+    <input id="friend-id-input" type="text" size="100">
+    <input id="friend-id-submit" type="button" value="Send">
+    <script type="text/javascript">
+        const id = '{{id|escapejs}}'
+        const chatSocket = new WebSocket(
+            'ws://' + window.location.host + `/ws/f/chat/${id}/`
+        );
+
+        chatSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            document.querySelector('#chat-log').value += (data.data.message.content + '\n');
+        };
+
+        chatSocket.onclose = function(e) {
+            console.error('Chat socket closed unexpectedly');
+        };
+
+        document.querySelector('#chat-message-input').focus();
+        document.querySelector('#chat-message-input').onkeyup = function(e) {
+            if (e.keyCode === 13) {  // Enter key
+                document.querySelector('#chat-message-submit').click();
+            }
+        };
+
+        document.querySelector('#chat-message-submit').onclick = function(e) {
+            const messageInputDom = document.querySelector('#chat-message-input');
+            const message = messageInputDom.value;
+            chatSocket.send(JSON.stringify({
+                'action': 'send_message',
+                'message': message,
+            }));
+            messageInputDom.value = '';
+        };
+        //const communicateSocket = new WebSocket(
+        //    'ws://' + window.location.host + `/ws/communicate/`
+        //)
+        //communicateSocket.onmessage = function(e){
+        //    console.log(JSON.parse(e.data))
+        //}
+        //communicateSocket.onclose = function(e) {
+        //    console.error('Communication socket closed unexpectedly');
+        //};
+        //document.querySelector('#friend-id-submit').onclick = function(e){
+        //    const idInputDom = document.querySelector('#friend-id-input')
+        //    const id = idInputDom.value
+        //    communicateSocket.send(JSON.stringify({
+        //        'action': 'send_friend_request',
+        //        'to_user_id': id
+        //    }))
+        //}
+    </script>
+</body>
+</html>

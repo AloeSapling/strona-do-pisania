@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Example</title>
+</head>
+<body>
+    {% csrf_token %}
+    <h1>Friends and friend requests</h1>
+    <div style="display: flex; flex-direction: row; gap:4px;">
+        <p>friends</p>
+        <label class="switch">
+            <input type="checkbox" id="chat_switch">
+            <span class="slider round"></span>
+        </label>        
+        <p>groups</p>
+    </div>
+    <div style="display: flex; flex-direction: column;" id="friend_chats">
+        {% for chat,other_user in friend_chats %}
+        <li style="display: flex; flex-direction: row;" id='friend_side_chat_{{other_user.id}}'>
+            <a href="{% url 'friend_chat' chat.id %}"><p>{{other_user.username}}</p></a>
+        </li>
+        {% endfor %}
+    </div>
+    <div style="display: none; flex-direction: column;" id="group_chats">
+        {% for group in group_chats %}
+        <li style="display: flex; flex-direction: row;" id='group_side_chat_{{group.id}}'>
+            <a href="{% url 'group_chat' group.id %}"><p>{{group.name}}</p></a>
+        </li>
+        {% endfor %}
+    </div>
+    <nav>
+        <button onclick="open_tab('friends')">friends</button>
+        <button onclick="open_tab('friend_requests')">friend requests</button>
+        <button onclick="open_tab('group_invites')">group invites</button>
+        <button onclick="open_tab('notifications')">notifications</button>
+    </nav>
+    <div style="display: flex; flex-direction: column;" id="friends">
+        {% for chat,other_user in friend_chats %}
+        <li style="display: flex; flex-direction: row;" id='friend_chat_{{other_user.id}}'>
+            <a href="{% url 'friend_chat' chat.id %}"><p>{{other_user.username}}</p></a>
+            <button onclick="removeFriend('{{other_user.id|escapejs}}')">remove</button>
+        </li>
+        {% endfor %}
+    </div>
+    <div id="group_invites" style="display: none;">
+        <h3>incoming</h3>
+        <div id="group_invites_incoming">
+            {% for invite in incoming_group_invites %}
+            <li style="display: flex; flex-direction: row;" id='group_invite_{{invite.id}}'>
+                <p>{{invite.group.name}}</p>
+                <button onclick="acceptGroupPrivateInvite('{{invite.id|escapejs}}','{{invite.group.name|escapejs}}','{{invite.group.id|escapejs}}')">accept</button>
+                <button onclick="rejectGroupInvite('{{invited.id|escapejs}}')">reject</button>
+            </li>
+            {% endfor %}
+        </div>
+        <h3>outgoing</h3>
+        <div id="group_invites_outgoing">
+            {% for invite in outgoing_group_invites %}
+            <li style="display: flex; flex-direction: row;" id='group_invite_{{invite.id}}'>
+                <a href="{% url 'group_chat' invite.group.id %}"><p>{{invite.group.name}}</p></a>>
+            </li>
+            {% endfor %}
+        </div>
+    </div>
+    <div id="friend_requests" style="display: none;">
+        <h3>incoming</h3>
+        <div id="friend_requests_incoming">
+            {% for request in incoming_friend_requests %}
+            <li style="display: flex; flex-direction: row;" id='friend_request_{{request.from_user.id}}'>
+                <p>{{request.from_user.username}}</p>
+                <button onclick="acceptFriendRequestPrivate('{{request.from_user.id|escapejs}}','{{request.from_user.username|escapejs}}')">accept</button>
+                <button onclick="rejectFriendRequest('{{request.from_user.id|escapejs}}')">reject</button>
+            </li>
+            {% endfor %}
+        </div>
+        <h3>outgoing</h3>
+        <li style="display: flex; flex-direction: row; justify-content: space-between;">
+            <p>Invite using a code: </p>
+            {% if friend_code != "not_found" %}
+            <div id="friend_code">
+                <p id="friend_code_show">{{friend_code}}</p>
+                <button style="display:none; "onclick="generateFriendCode()" id="generate_friend_code">generate code</button>
+            </div>
+            {% else %}
+            <div id="friend_code"><button onclick="generateFriendCode()" id="generate_friend_code">generate code</button></div>
+            {% endif %}
+        </li>
+        <div id="friend_requests_outgoing">
+            {% for request in outgoing_friend_requests %}
+            <li style="display: flex; flex-direction: row;" id='friend_request_outgoing_{{request.to_user.id}}'>
+                <p>{{request.to_user.username}}</p>
+            </li>
+            {% endfor %}
+        </div>
+    </div>
+    <div id="notifications" style="display: none;"></div>
+    <div>
+        <h2>add friend by id</h2>
+        <input id="friend-id-input" type="text" size="100">
+        <input id="friend-id-submit" type="button" value="Send">
+    </div>
+    <script type="text/javascript">
+        console.log('{{incoming_friend_requests|escapejs}}')
+        const communicateSocket = new WebSocket(
+            'ws://' + window.location.host + `/ws/communicate/`
+        )
+        communicateSocket.onmessage = function(e){
+            console.log(JSON.parse(e.data))
+            data = JSON.parse(e.data)
+            notif_elem = document.querySelector('#notifications')
+            console.log(data.message)
+            switch (data.message){
+                case "friend_request_recieved":
+                    req_elem = document.querySelector('#friend_requests_incoming')
+                    req_elem.innerHTML += `
+                    <li style="display: flex; flex-direction: row;" id='friend_request_${data.data.from_user.id}'>
+                        <p>${data.data.from_user.username}</p>
+                        <button onclick="acceptFriendRequestPrivate('${data.data.from_user.id}','${data.data.from_user.username}')">accept</button>
+                        <button onclick="rejectFriendRequest('${data.data.from_user.id}')">reject</button>
+                    </li>
+                    `
+                    notif_elem += `
+                    <li style="display: flex; flex-direction: row;" id='notif_friend_recieved_${data.data.from_user.id}'>
+                        <p>${data.data.from_user.username} has sent you a friend request</p>
+                    </li>
+                    `
+                    break;
+                case "friend_request_accepted":
+                    if(data.data.should_remove){
+                        elem = document.querySelector(`#friend_request_outgoing_${data.data.from_user.id}`)
+                        elem.style.display = 'none'
+                    }
+                    elem2 = document.querySelector('#friends')
+                    elem2.innerHTML += `
+                    <li style="display: flex; flex-direction: row;" id='friend_chat_${data.data.from_user.id}'>
+                        <a href="http://${window.location.host}/chat/f/${data.data.friend_id}"><p>${data.data.from_user.username}</p></a>
+                        <button onclick="removeFriend('${data.data.from_user.id}')">remove</button>
+                    </li>
+                    `
+                    elem3 = document.querySelector('#friend_chats')
+                    elem3.innerHTML += `
+                    <li style="display: flex; flex-direction: row;" id='friend_side_chat_${data.data.from_user.id}'>
+                        <a href="http://${window.location.host}/chat/f/${data.data.friend_id}"><p>${data.data.from_user.username}</p></a>
+                    </li>`
+                    break;
+                case "friend_request_rejected":
+                    elem = document.querySelector(`#friend_request_outgoing_${data.data.from_user.id}`)
+                    elem.style.display = 'none'
+                case "friend_removed":
+                    elem = document.querySelector(`#friend_side_chat_${data.data.from_user.id}`)
+                    elem2 = document.querySelector(`#friend_chat_${data.data.from_user.id}`)
+                    elem.style.display = 'none'
+                    elem2.style.display = 'none'
+                    break;
+                default:
+                    console.log("wrong")
+            }
+        }
+        communicateSocket.onclose = function(e) {
+            console.error('Communication socket closed unexpectedly');
+        };
+        document.querySelector('#friend-id-submit').onclick = async function(e){
+            console.log("clicked")
+            const idInputDom = document.querySelector('#friend-id-input')
+            const id = idInputDom.value
+            await communicateSocket.send(JSON.stringify({
+                'action': 'send_friend_request',
+                'to_user_id': id
+            }))
+        }
+        async function removeFriend(id){
+            await communicateSocket.send(JSON.stringify({
+                'action': 'remove_friend',
+                'friend_id': id,
+            }))
+            elem = document.getElementById(`friend_side_chat_${id}`).style.display = 'none'
+            elem2 = document.getElementById(`friend_chat_${id}`).style.display = 'none'
+        }
+        async function acceptFriendRequestPrivate(id,username){
+            await communicateSocket.send(JSON.stringify({
+                'action': 'accept_friend_request',
+                'type': 'private',
+                'from_user_id': id,
+            }))
+            res = await fetch(`http://${window.location.host}/chat/friend/get/${id}`,{
+                "method": 'post',
+                headers:{
+                    "x-csrftoken": '{{csrf_token|escapejs}}'
+                },
+                'credentials':"include"
+            })
+            elem = document.getElementById(`friend_request_${id}`).style.display = 'none'
+            elem2 = document.querySelector('#friends')
+                    elem2.innerHTML += `
+                    <li style="display: flex; flex-direction: row;" id='friend_chat_${id}'>
+                        <a href="http://${window.location.host}/chat/f/${res.id}"><p>${username}</p></a>
+                        <button onclick="removeFriend('${id}')">remove</button>
+                    </li>
+                    `
+                    elem3 = document.querySelector('#friend_chats')
+                    elem3.innerHTML += `
+                    <li style="display: flex; flex-direction: row;" id='friend_side_chat_${id}'>
+                        <a href="http://${window.location.host}/chat/f/${res.id}"><p>${username}</p></a>
+                    </li>`
+        }
+        async function rejectFriendRequest(id){
+            await communicateSocket.send(JSON.stringify({
+                'action': 'reject_friend_request',
+                'from_user_id': id,
+            }))
+            elem = document.getElementById(`friend_request_${id}`).style.display = 'none'
+        }
+        async function acceptGroupPrivateInvite(id,name){
+            await communicateSocket.send(JSON.stringify({
+                'action': 'accept_group_invite',
+                'type': 'private',
+                'group_invite_id': id,
+            }))
+            res = await fetch(`http://${window.location.host}/chat/group/get/${id}`,{
+                "method": 'post',
+                headers:{
+                    "x-csrftoken": '{{csrf_token|escapejs}}'
+                },
+                'credentials':"include"
+            })
+            elem = document.getElementById(`group_invite_${id}`).style.display = 'none'
+            elem2 = document.querySelector('#group_chats')
+                    elem2.innerHTML += `
+                    <li style="display: flex; flex-direction: row;" id='group_side_chat_${id}'>
+                        <a href="http://${window.location.host}/chat/g/${res.id}"><p>${name}</p></a>
+                        <button onclick="removeFriend('${id}')">remove</button>
+                    </li>
+                    `
+        }
+        async function rejectGroupInvite(id){
+            await communicateSocket.send(JSON.stringify({
+                'action': 'reject_group_invite',
+                'group_invite_id': id,
+            }))
+            elem = document.getElementById(`group_invite_${id}`).style.display = 'none'
+        }
+        async function generateFriendCode(){
+            res = await fetch("{% url 'friend_code_create' %}",{
+                "method": "post",
+                "headers":{
+                    'x-csrftoken': '{{csrf_token|escapejs}}'
+                },
+                "credentials": "include",
+            })
+            container = document.querySelector('#friend_code')
+            button = document.querySelector('#generate_friend_code')
+            button.style.display = "none"
+            container.innerHTML += `<p>${res.data.code}</p>`
+        }
+        switch_elem = document.querySelector('#chat_switch')
+            switch_elem.onchange = function(){
+                friend_chats = document.querySelector('#friend_chats')
+                group_chats = document.querySelector('#group_chats')
+                if(switch_elem.checked){
+                    group_chats.style.display = 'flex'
+                    friend_chats.style.display = 'none'
+                }
+                else{
+                    group_chats.style.display = 'none'
+                    friend_chats.style.display = 'flex'
+                }
+            }
+        function open_tab(id){
+            document.querySelector('#friends').style.display = 'none'
+            document.querySelector('#friend_requests').style.display = 'none'
+            document.querySelector('#group_invites').style.display = 'none'
+            document.querySelector('#notifications').style.display = 'none'
+            document.getElementById(id).style.display = 'flex'
+        }
+    </script>
+    <style>
+         /* The switch - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(26px);
+  -ms-transform: translateX(26px);
+  transform: translateX(26px);
+}
+.slider.round {
+  border-radius: 34px;
+}
+.slider.round:before {
+  border-radius: 50%;
+} 
+    </style>
+</body>
+</html>

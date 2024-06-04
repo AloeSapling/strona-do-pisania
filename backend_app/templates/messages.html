@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Messages</title>
+</head>
+<body>
+    <h2>All Messages</h2>
+    <ul>
+        {% for message in messages %}
+            <li>{{ message.sender }} to {{ message.receiver }}: {{ message.content }}</li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'message_form' %}">Send a new message</a>
+</body>
+</html>

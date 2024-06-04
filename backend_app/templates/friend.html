@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Friend add</title>
+</head>
+<body>
+    <h2>Addd friend</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ add_friend_form.friend }}
+        <button type="submit">submit</button>
+    </form>
+</body>
+</html>
