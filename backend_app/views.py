@@ -10,6 +10,7 @@ from django.views import View
 from backend_app.forms import MessageForm, UserRegistrationForm, UserLoginForm, FriendChatAdd, GroupChatCreate
 from django.http import HttpResponse
 from django.core.exceptions import ObjectDoesNotExist
+import json
 # Create your views here.
 def GetLoggedInStuff(user):
     if(user.is_authenticated):
@@ -33,14 +34,26 @@ def GetLoggedInStuff(user):
             (chat,chat.get_other_user(user)) for chat in FriendChat.objects.filter(users=user)
         ]
         try:
-            friend_code = FriendRequestCode.objects.get(user=user)
+            friend_code = FriendRequestCode.objects.get(user=user).code
         except ObjectDoesNotExist:
             friend_code = "not_found"
         try:
-            group_code = GroupInviteCode.objects.get(from_user=user)
+            group_code = GroupInviteCode.objects.get(from_user=user).code
         except ObjectDoesNotExist:
             group_code = "not_found"
-        return{
+        friend_request_user_ids = set(
+            [request['from_user']['id'] for request in friend_requests] +
+            [request['to_user']['id'] for request in outgoing_friend_requests]
+        )
+        friend_chat_user_ids = set(
+            [other_user.id for _, other_user in friend_chats_with_other_user]
+        )
+        excluded_user_ids = friend_request_user_ids | friend_chat_user_ids | {user.id}
+        users_you_can_friend = [
+            {"id": user.id, "username": user.username}
+            for user in CustomUser.objects.exclude(id__in=excluded_user_ids)
+        ]
+        return {
             "friend_chats": friend_chats_with_other_user,
             "incoming_friend_requests": friend_requests,
             "outgoing_friend_requests": outgoing_friend_requests,
@@ -49,17 +62,24 @@ def GetLoggedInStuff(user):
             "outgoing_group_invites": outgoing_group_invites,
             "friend_code": friend_code,
             "group_code": group_code,
-            'current_user':user
+            'current_user':user,
+            'users_you_can_friend': json.dumps(users_you_can_friend)
         }
     else: return {}
 
 def FriendChatView(request,pk):
     if(request.user.is_authenticated):
-        print(FriendChat.objects.all().values())
         chat = get_object_or_404(FriendChat,id=pk)
+        messages = []
+        messages = chat.messages.all()
+        messages = [
+            {"id": message.id, "content": message.content, "edited":message.edited, "author": {"username": message.author.username, "id": message.author.id}} for message in chat.messages.all()
+        ]
         id = pk
         if(chat.users.filter(id=request.user.id)):
-            return render(request, 'friendchat.html', {'id': id,**GetLoggedInStuff(request.user)})
+            return render(request, 'friendchat.html', {'id': id,
+                                                       'messages':messages,
+                                                       **GetLoggedInStuff(request.user)})
         return "error users not friends"
     return "error user is not logged in"
 def EmptyChatView(request):
@@ -85,7 +105,7 @@ def CreateGroupInvite(request,pk):
             GroupInviteCode.objects.get(group=group,from_user=request.user).delete()
         invite = GroupInviteCode.objects.create(group=group,from_user=request.user)
         invite.save()
-        return {'code': invite.code}
+        return JsonResponse({'code': invite.code})
     return {'message': 'user not logged in'}
 def CreateFriendRequest(request):
     if(request.user.is_authenticated):
@@ -93,7 +113,7 @@ def CreateFriendRequest(request):
             FriendRequestCode.objects.get(user=request.user).delete()
         request = FriendRequestCode.objects.create(user=request.user)
         request.save()
-        return {'code':request.code}
+        return JsonResponse({'code':request.code})
     return {'message': 'user not logged in'}
 def GetFriendChatId(request,pk):
     if(request.user.is_authenticated):
@@ -105,7 +125,7 @@ def GetFriendChatId(request,pk):
             chat=FriendChat.objects.filter(users=user).get(users=request.user)
         except ObjectDoesNotExist:
             return {'message': "friendchat doesn't exist"}
-        return {"id":chat.id}
+        return JsonResponse({"id":chat.id})
     return {'message': 'user not logged in'}
 def GetGroupChatId(request,pk):
     if(request.user.is_authenticated):
@@ -207,9 +227,22 @@ class UserLogoutView(View):
     def post(self, request):
         if request.user.is_authenticated:
             logout(request)
-            return redirect('home')
-        return redirect('login')
-
+        return redirect('auth')
+    def get(self, request):
+        if request.user.is_authenticated:
+            logout(request)
+        return redirect('auth')
+def get_friend_by_code(request,pk):
+    if(request.user.is_authenticated):
+        try:
+            request = FriendRequestCode.objects.get(code=pk,available=False)
+        except ObjectDoesNotExist:
+            return {"balbalbahjabl"}
+        chat_id = FriendChat.objects.filter(users=request.user).get(users=request.user).id
+        request_id = request.user.id
+        request_username = request.user.username
+        request.delete()
+        return JsonResponse({"chat_id": chat_id,"id":request_id,"username":request_username})
 def FriendAdd(request):
     if request.method == 'POST':
         form = FriendChatAdd(request.POST)

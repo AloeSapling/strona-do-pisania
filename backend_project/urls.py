@@ -14,7 +14,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path
-from backend_app.views import MessageView, UserAuthView, UserLogoutView, FriendChatDeleteView,FriendRequestDeleteView,MessageDeleteView,GroupChatDeleteView,GroupInviteCodeDeleteView,GroupInvitePrivateDeleteView,FriendChatView,GroupChatView, set_csrf_token, FriendAdd,EmptyChatView, CreateGroupInvite, CreateFriendRequest, GetFriendChatId,GetGroupChatId
+from backend_app.views import MessageView, UserAuthView, UserLogoutView, FriendChatDeleteView,FriendRequestDeleteView,MessageDeleteView,GroupChatDeleteView,GroupInviteCodeDeleteView,GroupInvitePrivateDeleteView,FriendChatView,GroupChatView, set_csrf_token, FriendAdd,EmptyChatView, CreateGroupInvite, CreateFriendRequest, GetFriendChatId,GetGroupChatId,get_friend_by_code
 from django.views.generic import TemplateView
 
 urlpatterns = [
@@ -30,8 +30,8 @@ urlpatterns = [
     path('group_code/create/<int:pk>/',CreateGroupInvite,name="group_code_create"),
     path('friend_code/create/',CreateFriendRequest,name="friend_code_create"),
     path('chat/friend/get/<int:pk>/',GetFriendChatId,name="get_friend_chat_id"),
+    path('chat/friend/get_by_code/<pk>/',get_friend_by_code,name="get_friend_chat_id_by_code"),
     path('chat/group/get/<int:pk>/',GetGroupChatId,name="get_group_chat_id"),
-
     #for development purposes
     path('friend/delete/', FriendChatDeleteView.as_view(),name="friend_delete"),
     path('group/delete/', GroupChatDeleteView.as_view(),name="group_delete"),

@@ -90,7 +90,8 @@ def accept_friend_request(type,identifier,curr_user):
             request = FriendRequestPrivate.objects.get(from_user=friend_request.user,to_user=curr_user,available=True)
             request.delete()
             rem = True
-        friend_request.delete()
+        friend_request.available = False
+        friend_request.save()
         new_chat = FriendChat.objects.create()
         chat_id = new_chat.id
         new_chat.users.add(curr_user)
@@ -145,15 +146,15 @@ def edit_friend_chat_message(message_id,curr_user,new_message,id):
     if(FriendChat.objects.filter(id=id).exists() == False):
         return {'status': '400', 'message': 'given chat does not exist'}
     chat = FriendChat.objects.get(id=id)
-    if(chat.messages.filter(id=message_id).exists() == False):
+    if(Message.objects.filter(id=message_id).exists() == False):
         return {'status': '400', 'message': 'given message does not exist in chat'}
-    mess = FriendChat.messages.get(id=message_id)
+    mess = Message.objects.get(id=message_id)
     if(mess.author.id != curr_user.id):
         return {'status': '403', 'message': 'user is not author of message'}
     mess.content = new_message
     mess.edited = True
     mess.save()
-    return {'status': '200', 'message': 'message edited successfully', 'message': json.loads(serialize_with_id([mess]))}
+    return {'status': '200', 'message': 'message edited successfully', 'message_obj': json.loads(serialize_with_id([mess]))}
 @database_sync_to_async
 def delete_friend_chat_message(message_id,curr_user,id):
     if(FriendChat.objects.filter(id=id).exists() == False):
@@ -166,7 +167,7 @@ def delete_friend_chat_message(message_id,curr_user,id):
         return {'status': '403', 'message': 'user is not author of message'}
     mess_data = mess
     mess.delete()
-    return {'status': '200', 'message': 'message edited successfully', 'message': json.loads(serialize_with_id([mess_data]))}
+    return {'status': '200', 'message': 'message edited successfully', 'message_obj': json.loads(serialize_with_id([mess_data]))}
 
 
 
@@ -458,10 +459,12 @@ class FriendChatConsumer(AsyncWebsocketConsumer):
             text_data_json = json.loads(text_data)
             if(text_data_json['action']):
                 action = text_data_json['action']
+                print(action)
                 if(action == "send_message"):
                     if(text_data_json["message"]):
                         message = text_data_json["message"]
                         res = await add_message_to_friend_chat(message,self.user,self.room_name)
+                        print(res['message'])
                         if res['status'] == '200':
                             date_of_creation = res['date_of_creation']
                             await self.channel_layer.group_send(
@@ -478,12 +481,12 @@ class FriendChatConsumer(AsyncWebsocketConsumer):
                     if(text_data_json["message_id"] and text_data_json["new_message"]):
                         message_id = text_data_json["message_id"]
                         new_message = text_data_json["new_message"]
-                        res = await edit_friend_chat_message(message_id,self.user,self.room_name,new_message)
+                        res = await edit_friend_chat_message(message_id,self.user,new_message,id=self.room_name)
                         if res['status'] == '200':
                             await self.channel_layer.group_send(
                                 self.room_group_name, {"type": "send_notification", "message": "message_edited", "data":
                                                        { 
-                                                        "message": res['message']
+                                                        "message": res['message_obj']
                                                         }}
                             )
                     else:
@@ -496,7 +499,7 @@ class FriendChatConsumer(AsyncWebsocketConsumer):
                             await self.channel_layer.group_send(
                                 self.room_group_name, {"type": "send_notification", "message": "message_deleted", "data":
                                                        { 
-                                                        "message": res['message']
+                                                        "message": res['message_obj']
                                                         }}
                             )
                     else:
@@ -783,9 +786,10 @@ class CommunicateConsumer(AsyncWebsocketConsumer):
                             {'status': '400', 'message': 'no friend request code provided provided'}
                     res = await accept_friend_request(request_type,identifier,self.user)
                     toremove = False
-                    if (request_type=="private" or (request_type=="code" and res['removed_existing'] == True)):
-                        toremove = True
+                    print(res['message'])
                     if(res['status'] == '200'):
+                        if (request_type=="private" or (request_type=="code" and res['removed_existing'] == True)):
+                            toremove = True
                         await self.notify(res['user']['id'],"friend_request_accepted",
                                     data={
                                         "from_user":json.loads(await async_serialize_with_id([self.user])),
